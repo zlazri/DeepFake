@@ -169,11 +169,11 @@ def getSURFThroughoutVid(vidArr):
     for i in range(len(KeyPoints)-1):
 
         # Get keypoints between adjacent frames
-        k0 = KeyPoints[i];
+        k0 = KeyPoints[0];
         k1 = KeyPoints[i+1];
 
         # Get descriptors associated with keypoints
-        d0 = Descriptors[i];
+        d0 = Descriptors[0];
         d1 = Descriptors[i+1];
 
         # BFMatcher with default params
@@ -188,24 +188,30 @@ def getSURFThroughoutVid(vidArr):
         # Get list of keypoint coordinates between ith and i+t-th frames
         coors_i0 = [k0[match.queryIdx].pt for match in matches];
         coors_i1 = [k1[match.trainIdx].pt for match in matches];
+
+        # RANSAC to remove outliers
+        M, mask = cv2.findHomography(np.float32(coors_i1).reshape(-1,1,2), np.float32(coors_i0).reshape(-1,1,2), cv2.RANSAC, 5.0)
+        coors_i0 = [coors_i0[x] for x in np.nonzero(mask)[0]]
+        coors_i1 = [coors_i1[x] for x in np.nonzero(mask)[0]]
+
         
         
         Coor_Matches.append([coors_i0, coors_i1]);
         
     return Coor_Matches, [init_ROI1, init_ROI2]
 
-def KLT_Matrix(P1, P2):
+def KLT_Matrix(P0, P1):
 
     m,n = P1.shape
 
     # Build system of equations to find homography matrix.
-    A = np.array([[ P1[0,0], P1[1,0], 0, 0, 1, 0, -P2[0,0]]]);
-    B = np.array([[ 0, 0, P1[0,0], P1[1,0], 0, 1, -P2[1,0]]]);
+    A = np.array([[ P1[0,0], P1[1,0], 0, 0, 1, 0, -P0[0,0]]]);
+    B = np.array([[ 0, 0, P1[0,0], P1[1,0], 0, 1, -P0[1,0]]]);
     A = np.vstack((A,B));
     for i in range(n-1):
-        B = np.array([[ P1[0,i+1], P1[1,i+1], 0, 0, 1, 0, -P2[0,i+1] ]]);
+        B = np.array([[ P1[0,i+1], P1[1,i+1], 0, 0, 1, 0, -P0[0,i+1] ]]);
         A = np.vstack((A,B));
-        B = np.array([[ 0, 0, P1[0,i+1], P1[1,i+1], 0, 1, -P2[1,i+1] ]]);
+        B = np.array([[ 0, 0, P1[0,i+1], P1[1,i+1], 0, 1, -P0[1,i+1] ]]);
         A = np.vstack((A,B));
         
     # Solve system
@@ -279,27 +285,24 @@ def cheekSigs(vidArr, init_ROIs, A_mats):
     sig_l[:,0] = ROI_l.mean(axis=(0,1));
     sig_r[:,0] = ROI_r.mean(axis=(0,1));
 
-    fig,(ax1,ax2) = plt.subplots(1,2)
-    ax1.imshow(ROI_l, cmap= 'gray')
-    ax2.imshow(vidArr[0])        
-    plt.show()
-    pdb.set_trace();
+    #fig,(ax1,ax2) = plt.subplots(1,2)
+    #ax1.imshow(ROI_l, cmap= 'gray')
+    #ax2.imshow(vidArr[0])        
+    #plt.show()
+    #pdb.set_trace()
 
     # Remaining frames
     for i in range(N-1):
-        pdb.set_trace()
         A = A_mats[i];
-        rect_l = A@np.vstack((rect_l,np.ones((1,4))));
-        rect_r = A@np.vstack((rect_r,np.ones((1,4))));
-        pdb.set_trace()
-        rect_l = rect_l[:2,:];
-        rect_r = rect_r[:2,:];
-        
-        pdb.set_trace()
-        rectL = rect_l.astype(int);
-        rectR = rect_r.astype(int);
+        rect_L = A@np.vstack((rect_l,np.ones((1,4))));
+        rect_R = A@np.vstack((rect_r,np.ones((1,4))));
 
-        pdb.set_trace()
+        rect_L = rect_L[:2,:];
+        rect_R = rect_R[:2,:];
+        
+        rectL = rect_L.astype(int);
+        rectR = rect_R.astype(int);
+
         mask_l = np.zeros((m,n));
         mask_l = cv2.fillConvexPoly(mask_l, np.array([rectL[:,0],rectL[:,1], rectL[:,2], rectL[:,3]]), color = (1,1,1));
 
@@ -312,20 +315,25 @@ def cheekSigs(vidArr, init_ROIs, A_mats):
             sig_l[:,i+1] = ROI_l[np.nonzero(ROI_l)].mean();
             sig_r[:,i+1] = ROI_r[np.nonzero(ROI_r)].mean();
         
-        fig,(ax1,ax2) = plt.subplots(1,2)
-        ax1.imshow(ROI_l, cmap= 'gray')
-        ax2.imshow(vidArr[i+1])        
-        plt.show()
-        pdb.set_trace();
+        #print(i)
+        #fig,(ax1,ax2) = plt.subplots(1,2)
+        #ax1.imshow(ROI_l, cmap= 'gray')
+        #ax2.imshow(vidArr[i+1])        
+        #plt.show()
 
     return sig_l, sig_r
     
 print("Importing Video")
-#vidArr = importVideo("/home/zlazri/Documents/ENEE/Research/FakeCatcher/FakeCatcher/DeepfakeTIMIT/lower_quality/fcmh0/sa1-video-fjre0.avi");
+#vidArr = importVideo("/home/zlazri/Documents/ENEE/Research/FakeCatcher/FakeCatcher/DeepfakeTIMIT/lower_quality/fjre0/sa1-video-fcmh0.avi");
 vidArr = importVideo("/home/zlazri/Documents/ENEE/Research/FakeCatcher/FakeCatcher/DeepfakeTIMIT/fram1-original.mov");
+
 print("Calculating SURF points in the trapezoid ROI")
 [featMatches, init_ROIs] =getSURFThroughoutVid(vidArr);
+
 print("Tracking features")
 A_mats = trackFeatures(vidArr, featMatches)
 sig_l, sig_r = cheekSigs(vidArr, init_ROIs, A_mats);
 pdb.set_trace();
+
+
+#### Is something wrong with the right signal?
