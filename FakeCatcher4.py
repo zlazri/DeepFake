@@ -6,6 +6,14 @@ import pdb
 import matplotlib.patches as patches
 from scipy.linalg import svd
 from matplotlib.patches import Circle
+import dlib
+from imutils import face_utils
+import imutils
+from scipy.signal import butter, filtfilt
+from scipy.linalg import hankel, svd
+from pyts.decomposition import SingularSpectrumAnalysis as ssa
+
+
 
 def importVideo(path):
 
@@ -224,7 +232,7 @@ def Affine_Matrix(P0, P1):
     return H
 
 
-def cheekSigs(vidpath, init_ROIs, featMatches):
+def cheekSigs2(vidpath, init_ROIs, featMatches):
 
     # Spatially average the cheek ROI on each frame to obtain two cheek signals
    
@@ -321,6 +329,249 @@ def CHROM(RGB, fs):
     H=H/w;
     
     return H
+
+def getAndTrackDlibFeatures(vidpath):
+
+    # Get video parameters
+    cap = cv2.VideoCapture(vidpath);
+    N_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT));
+    ret, old_frame = cap.read()
+    old_gray = cv2.cvtColor(old_frame, cv2.COLOR_BGR2GRAY)
+    color = np.random.randint(0,255,(300,3))
+
+    # Initialize DLIB face detector
+    detector = dlib.get_frontal_face_detector()
+    predictor = dlib.shape_predictor("/home/zlazri/Documents/ENEE/Research/FakeCatcher/FakeCatcher/shape_predictor_68_face_landmarks.dat");
+
+    rects = detector(old_gray,1);
+
+    for (i,r) in enumerate(rects):
+        rect = r
+
+    shape = predictor(old_gray, rect)
+    shape = face_utils.shape_to_np(shape)
+
+    # Plot DLIB face landmarks
+    (x, y, w, h) = face_utils.rect_to_bb(rect)
+    #cv2.rectangle(old_frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+    
+    # show the face number
+    #cv2.putText(old_frame, "Face #{}".format(i + 1), (x - 10, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+
+    for number, (x, y) in enumerate(shape):
+        text = str(number);
+        text_origin = (x - 5, y - 5)
+
+        if number == 33:
+            y2 = y
+        if number == 40:
+            x1 = x;
+            y_up1 = y;
+        if number == 47:
+            x2 = x;
+            y_up2 = y;
+
+        #cv2.circle(old_frame, (x, y), 1, (0, 0, 255), -1)
+        #cv2.putText(old_frame, text, text_origin, cv2.FONT_HERSHEY_DUPLEX, 0.25, (255, 0, 0));
+    
+    y1 = np.max([y_up1, y_up2]);
+
+    # Define ROI
+
+    x = x1
+    y = y1;
+    w = x2-x1;
+    h = y2-y1;
+
+    ROI = [x, y, w, h];
+
+    #cv2.rectangle(old_frame, (x, y), (x + w, y + h), (0, 0, 255), 2);
+    #cv2.imshow("Output", old_frame)
+    #cv2.waitKey(0)
+
+##################################    # Track face landmarks
+
+
+    # Set LK tracking Parameters
+    lk_params = dict( winSize  = (15,15),
+                  maxLevel = 2,
+                  criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
+
+    # Initial keypoints/formatting
+    p0 = np.array(shape, np.float32);
+    p0 = p0.reshape(-1,1,2);
+
+    # Initialize empty lists for tracked keypoints
+    mask = np.zeros_like(old_frame)
+    k0 = [];
+    k1 = [];
+
+    # Perform Tracking
+    for i in range(N_frames-1):
+        ret,frame = cap.read()
+        frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+        # calculate optical flow
+        p1, st, err = cv2.calcOpticalFlowPyrLK(old_gray, frame_gray, p0, None, **lk_params)
+
+        # Select good points
+        good_new = p1[st==1]
+        good_old = p0[st==1]
+
+        # draw the tracks
+        for i,(new,old) in enumerate(zip(good_new,good_old)):
+            a,b = new.ravel()
+            c,d = old.ravel()
+            #pdb.set_trace()
+            mask = cv2.line(mask, (a,b),(c,d), color[i].tolist(), 2)
+            frame = cv2.circle(frame,(a,b),5,color[i].tolist(),-1)
+        img = cv2.add(frame,mask)
+
+        cv2.imshow('frame',img)
+        k = cv2.waitKey(30) & 0xff
+        if k == 27:
+            break
+
+        # Add points to list of matches
+        k0.append(p0);
+        k1.append(p1);
+        
+        # Now update the previous frame and previous points
+        old_gray = frame_gray.copy()
+        p0 = good_new.reshape(-1,1,2)
+
+    cv2.destroyAllWindows()
+    cap.release()
+
+    # Save matched keypoints
+    featMatches = [k0, k1];       
+        
+    return featMatches, ROI
+##################################################
+
+##################################################
+def cheekSigs(vidpath, ROI, featMatches):
+
+    # Spatially average the cheek ROI on each frame to obtain two cheek signals
+   
+    # Get video parameters
+    cap = cv2.VideoCapture(vidpath);
+    N = int(cap.get(cv2.CAP_PROP_FRAME_COUNT));
+    ret, old_frame = cap.read()
+    frame = old_frame[:,:,::-1]
+    old_gray = cv2.cvtColor(old_frame, cv2.COLOR_BGR2GRAY)
+    color = np.random.randint(0,255,(300,3)) 
+    m,n,k = old_frame.shape
+
+    # Initialize signal
+    sig = np.zeros((3,N));
+
+    # First frame
+    x, y, w, h = ROI; # Gather ROI parameters
+
+    rect = np.array([[x, x+w, x+w, x],[y, y, y+h, y+h]]);
+
+    sig[0,0] = frame[y:y+h, x:x+w,0].mean();
+    sig[1,0] = frame[y:y+h, x:x+w,1].mean();
+    sig[2,0] = frame[y:y+h, x:x+w,2].mean();
+
+    # Gather feature matches
+    k0, k1 = featMatches;
+
+    # Remaining frames
+    for i in range(N-1):
+
+        # Features from the current and next frame
+        feat_i0 = k0[i].squeeze();
+        feat_i1 = k1[i].squeeze();
+        feat_i0 = feat_i0[:,::-1];
+        feat_i1 = feat_i1[:,::-1];
+
+        # Get mapping
+        A = Affine_Matrix(feat_i0,feat_i1);
+        #pdb.set_trace()
+
+        Rect = A@np.vstack((rect,np.ones((1,4))));
+        Rect = Rect[:2,:];
+        Rect = rect.astype(int);
+
+        mask = np.zeros((m,n));
+        mask = cv2.fillConvexPoly(mask, np.array([Rect[:,0],Rect[:,1], Rect[:,2], Rect[:,3]]), color = (1,1,1));
+
+        ret,frame = cap.read()
+        frame = frame[:,:,::-1];
+
+        sig[0,i+1] = frame[mask*frame[:,:,0]>0,0].mean();
+        sig[1,i+1] = frame[mask*frame[:,:,1]>0,1].mean();
+        sig[2,i+1] = frame[mask*frame[:,:,2]>0,2].mean();
+
+    return sig
+###################################################
+
+def greenSig(vidpath, RGB):
+
+    # Get video parameters
+    cap = cv2.VideoCapture(vidpath);
+    N_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT));
+    ret, old_frame = cap.read()
+    old_gray = cv2.cvtColor(old_frame, cv2.COLOR_BGR2GRAY)
+    color = np.random.randint(0,255,(300,3))
+
+    # Bandpass filter the signal between 0.8 and 5 Hz
+    fs = cap.get(cv2.CAP_PROP_FPS);
+    nyq = fs/2;
+    lowcut = 0.8;
+    highcut = 5;
+    low = lowcut/nyq;
+    high = highcut/nyq;
+    b, a = butter(10, [low, high], btype = 'bandpass');
+    G = RGB[1,:];
+    G = filtfilt(b,a,G);
+
+    pdb.set_trace()
+
+    # SSA decomposition and RC selection
+    G = G.reshape(1,-1);
+    SSA = ssa(window_size=30);
+    G_RCs = SSA.fit_transform(G);
+    
+
+    # SSA decomposition and RC selection
+    #SSA(sig);
+    #H = hankel(G);           # Hankel matrix
+    #[U, S, V] = svd(H);      # Singular value decomposition
+    #X = np.zeros(H.shape);
+    ##for i in range(10):      # Generate resultant matrix
+    ##    X = X + S[i,i]*U[:,i]@V[:,i].T
+    #X_elem = np.array( [S[i] * np.outer(U[:,i], V[:,i]) for i in range(0,10)] )
+    #
+    #n = 10 # In case d is less than 12 for the toy series. Say, if we were to exclude the noise component...
+    #for i in range(n):
+    #    plt.subplot(4,4,i+1)
+    #    title = "$\mathbf{X}_{" + str(i) + "}$"
+    #    plot_2d(X_elem[i], title)
+    #plt.tight_layout()
+    #
+    #fig = plt.subplot()
+    #for i in range(n):
+    #    F_i = X_to_TS(X_elem[i])
+    #    np.linspace(1,len(G), len(G));
+    #    pdb.set_trace()
+    #    fig.axes.plot(t, F_i, lw=2)
+    #
+    #fig.axes.plot(t, F, alpha=1, lw=1)
+    #fig.set_xlabel("$t$")
+    #fig.set_ylabel(r"$\tilde{F}_i(t)$")
+    #legend = [r"$\tilde{F}_{%s}$" %i for i in range(n)] + ["$F$"]
+    #fig.set_title("The First 12 Components of the Toy Time Series")
+    #fig.legend(legend, loc=(1.05,0.1));
+    #
+    # Implements green signal paper from DeepFake
+    #pdb.set_trace()
+
+    return g_sig
+
+    
     
 print("Importing Video")
 
@@ -328,15 +579,30 @@ print("Importing Video")
 
 vidpath = '/home/zlazri/Documents/ENEE/Research/FakeCatcher/FakeCatcher/DeepfakeTIMIT/lower_quality/fadg0/sa1-video-fram1.avi'
 
+print("Tracking DLIB Landmarks using KLT algorithm")
+[featMatches, ROI] = getAndTrackDlibFeatures(vidpath);
+
+print("Tracking ROI and calculating mid-region signal")
+sig_m = cheekSigs(vidpath, ROI, featMatches);
+
+print("Getting PPG signal")
+C_g = greenSig(vidpath, sig_m);
+
+print("Calculating mid-region chrominance PPG signals")
+C_m = CHROM(sig_m, 48).flatten();
+
+pdb.set_trace()
+
+
 print("Tracking tracking SURF points using KLT algorithm")
 [featMatches, init_ROIs] =getSURFThroughoutVid(vidpath);
 
-print("Tracking ROI and calculating cheek signal")
-sig_l, sig_r = cheekSigs(vidpath, init_ROIs, featMatches);
+print("Tracking ROI and calculating cheek signals")
+sig_l, sig_r = cheekSigs2(vidpath, init_ROIs, featMatches);
 
 print("Calculating cheek chrominance PPG signals")
-C_l = CHROM(sig_l, 48);
-C_r = CHROM(sig_r, 48);
+C_l = CHROM(sig_l, 48).flatten();
+C_r = CHROM(sig_r, 48).flatten();
 pdb.set_trace();
 
 
@@ -344,9 +610,29 @@ pdb.set_trace();
 #
 # 1) Check signal extraction (Done)
 # 2) Chrominance rPPG implementation (Done)
-# 3) Mid-region signal extraction (TODO)
+# 3) Mid-region signal extraction (Done)
 # 4) Green signal extraction (TODO)
 
+    # Step 1
+    #-Bandpass filter the green channel [0.8, 5] Hz
+
+    # Step 2
+    #-Reshape the green signal into the Hanekl Matrix
+    #-Perform singular value decompostion on the Hankel matrix
+    #-Sort the eigentriple in descending order by singular value and reconstruct the top 10 as RC candidates by diagonal averging.
+    #-Calculate the FT of each of the 10 candidates
+    #-Retain the RC candidates whose two dominant frequencies are such that one is twice the other (i.e. first and second harmonics) (If there are none, then retain them all.)
+    #-Sum the RCs to get the signal y
+
+    # Step 3
+    #-Select a hanning window of certain size
+    #-multiply and shift the hanning window along the signal and add all overlapped signal sections to the output. The shift is half the size of the hanning windowo
+
+    # Step 4
+ 
+
+
+# 5) Simplify code and remove redundancies
 
 
 
