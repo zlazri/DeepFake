@@ -9,11 +9,9 @@ from matplotlib.patches import Circle
 import dlib
 from imutils import face_utils
 import imutils
-from scipy.signal import butter, filtfilt
+from scipy.signal import butter, filtfilt, find_peaks
 from scipy.linalg import hankel, svd
 from pyts.decomposition import SingularSpectrumAnalysis as ssa
-
-
 
 def importVideo(path):
 
@@ -60,7 +58,6 @@ def trapMask(height,width):
 
     # Fill in trapezoid
     mask = cv2.fillConvexPoly(mask, np.array([p1, p2, p3, p4]), color = (1,1,1));
-#    mask = np.repeat(mask[...,np.newaxis],dim,-1)
 
     return mask, [p1, p2, p3, p4]
 
@@ -104,7 +101,7 @@ def getTrapROIFromRect(img, x, y, w, h, first=1):
         ROI1 = [int(ROI_1x), int(ROI_1y), int(ROI_w), int(ROI_h)];
         ROI2 = [int(ROI_2x), int(ROI_2y), int(ROI_w), int(ROI_h)];
 
-        return mask, ROI1, ROI2
+        return mask, ROI1, ROI2, pts
 
 
 def getSURFThroughoutVid(vidpath):
@@ -138,7 +135,23 @@ def getSURFThroughoutVid(vidpath):
 
     # Extract face-trapezoid and ROIs
     parms = getTrapROIFromRect(old_gray, x, y, w, h, 0)  
-    mask, init_ROI1, init_ROI2 = parms;
+    mask, init_ROI1, init_ROI2, trap_pts = parms;
+    [x1, y1, w1, h1] = init_ROI1;
+    [x2, y2, w2, h2] = init_ROI2;
+    [x_t, y_t, w_t, h_t] = trap_pts;
+
+    # Start Creating Figure
+    fig, ax = plt.subplots(1)
+    ax.imshow(old_frame[:,:,::-1]);
+    rect1 = patches.Rectangle((x,y),w, h, fill = False, color =(0,1,0));
+    ROI1 = patches.Rectangle((x1,y1),w1, h1, fill = False, color =(1,0,0));
+    ROI2 = patches.Rectangle((x2,y2),w2, h2, fill = False, color =(1,0,0));
+    trapezoid = plt.Polygon(trap_pts,  fill=None, edgecolor='b')
+    ax.add_patch(trapezoid)
+    ax.add_patch(rect1);
+    ax.add_patch(ROI1);
+    ax.add_patch(ROI2);   
+    ######################
         
     # Detect SURF keypoints
     surf = cv2.xfeatures2d.SURF_create();
@@ -148,6 +161,15 @@ def getSURFThroughoutVid(vidpath):
     for i in range(len(keypoints)-1):
         kk = np.vstack((kk, keypoints[i+1]));
     keypoints = kk;
+
+    # Finish Figure
+    mCirc, nCirc = kk.shape;
+    for i in range(mCirc):
+        circ = patches.Circle((kk[i,0],kk[i,1]), edgecolor='y', fill = False)
+        ax.add_patch(circ);
+    plt.show()
+    ########################
+    
 
     # Set LK tracking Parameters
     lk_params = dict( winSize  = (15,15),
@@ -260,7 +282,7 @@ def cheekSigs2(vidpath, init_ROIs, featMatches):
     rect_r = np.array([[x_r, x_r+w_r, x_r+w_r, x_r],[y_r, y_r, y_r+h_r, y_r+h_r]]);
 
     sig_l[0,0] = frame[y_l:y_l+h_l, x_l:x_l+w_l,0].mean();
-    sig_r[0,0]= frame[y_r:y_r+h_r, x_r:x_r+w_r,0].mean();
+    sig_r[0,0] = frame[y_r:y_r+h_r, x_r:x_r+w_r,0].mean();
     sig_l[1,0] = frame[y_l:y_l+h_l, x_l:x_l+w_l,1].mean();
     sig_r[1,0] = frame[y_r:y_r+h_r, x_r:x_r+w_r,1].mean();
     sig_l[2,0] = frame[y_l:y_l+h_l, x_l:x_l+w_l,2].mean();
@@ -301,11 +323,18 @@ def cheekSigs2(vidpath, init_ROIs, featMatches):
         frame = frame[:,:,::-1];
 
         sig_l[0,i+1] = frame[mask_l*frame[:,:,0]>0,0].mean();
-        sig_r[0,i+1]= frame[mask_r*frame[:,:,0]>0,0].mean();
+        sig_r[0,i+1] = frame[mask_r*frame[:,:,0]>0,0].mean();
         sig_l[1,i+1] = frame[mask_l*frame[:,:,1]>0,1].mean();
         sig_r[1,i+1] = frame[mask_r*frame[:,:,1]>0,1].mean();
         sig_l[2,i+1] = frame[mask_l*frame[:,:,2]>0,2].mean();
         sig_r[2,i+1] = frame[mask_r*frame[:,:,2]>0,2].mean();
+
+        # Display tracked affine transform
+        #plt.imshow((-1*mask_l+1)*(-1*mask_r+1)*frame[:,:,0], cmap = 'gray')
+        #plt.show()
+
+        rect_l = rect_L
+        rect_r = rect_R
 
     return sig_l, sig_r
 
@@ -353,10 +382,10 @@ def getAndTrackDlibFeatures(vidpath):
 
     # Plot DLIB face landmarks
     (x, y, w, h) = face_utils.rect_to_bb(rect)
-    #cv2.rectangle(old_frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+    cv2.rectangle(old_frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
     
     # show the face number
-    #cv2.putText(old_frame, "Face #{}".format(i + 1), (x - 10, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+    cv2.putText(old_frame, "Face #{}".format(i + 1), (x - 10, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 
     for number, (x, y) in enumerate(shape):
         text = str(number);
@@ -371,8 +400,8 @@ def getAndTrackDlibFeatures(vidpath):
             x2 = x;
             y_up2 = y;
 
-        #cv2.circle(old_frame, (x, y), 1, (0, 0, 255), -1)
-        #cv2.putText(old_frame, text, text_origin, cv2.FONT_HERSHEY_DUPLEX, 0.25, (255, 0, 0));
+        cv2.circle(old_frame, (x, y), 1, (0, 0, 255), -1)
+        cv2.putText(old_frame, text, text_origin, cv2.FONT_HERSHEY_DUPLEX, 0.25, (255, 0, 0));
     
     y1 = np.max([y_up1, y_up2]);
 
@@ -385,9 +414,10 @@ def getAndTrackDlibFeatures(vidpath):
 
     ROI = [x, y, w, h];
 
-    #cv2.rectangle(old_frame, (x, y), (x + w, y + h), (0, 0, 255), 2);
+    cv2.rectangle(old_frame, (x, y), (x + w, y + h), (0, 0, 255), 2);
     #cv2.imshow("Output", old_frame)
     #cv2.waitKey(0)
+    #pdb.set_trace()
 
 ##################################    # Track face landmarks
 
@@ -517,6 +547,12 @@ def greenSig(vidpath, RGB):
     old_gray = cv2.cvtColor(old_frame, cv2.COLOR_BGR2GRAY)
     color = np.random.randint(0,255,(300,3))
 
+    # Plot initial G signal
+    plt.plot(RGB[2,:])
+    plt.title('Initial G sig.')
+    plt.show()
+    ################################
+
     # Bandpass filter the signal between 0.8 and 5 Hz
     fs = cap.get(cv2.CAP_PROP_FPS);
     nyq = fs/2;
@@ -528,56 +564,170 @@ def greenSig(vidpath, RGB):
     G = RGB[1,:];
     G = filtfilt(b,a,G);
 
-    pdb.set_trace()
+    # Plot bandpass filtered G signal
+    plt.plot(G)
+    plt.title('Bandpass filtered G sig. [0.8, 5] Hz')
+    plt.show()
+    ###################################
 
     # SSA decomposition and RC selection
     G = G.reshape(1,-1);
     SSA = ssa(window_size=30);
     G_RCs = SSA.fit_transform(G);
+    RC_10 = G_RCs[0:10,:];
+
+    # Plot first 4 RC signals
+    fig, ax = plt.subplots(4,1);
+    fig.suptitle('Reconstruction Components')
+    ax[0].plot(RC_10[0,:])
+    ax[1].plot(RC_10[1,:])
+    ax[2].plot(RC_10[2,:])
+    ax[3].plot(RC_10[3,:])
+    plt.show()
+    #######################     
+
+    # Calculate FFT of 10 candiates and max peaks
+    RC10_FFT = np.zeros(RC_10.shape);
+    max_peaks = np.zeros((1,10)).flatten()
+    for i in range(10):
+        RC10_FFT[i,:] = np.fft.fft(RC_10[i,:]);
+
+    # Plot FFT of first 4 RC signals
+    fig, ax = plt.subplots(4,2);
+#    fig.suptitle('FFT of Reconstruction Components')
+#    ax[0].plot(fft_freq, np.abs(RC10_FFT[0,:]), label="FFT RC 1", color='r')
+#    ax[1].plot(fft_freq, np.abs(RC10_FFT[1,:]), label="FFT RC 2", color='r')
+#    ax[2].plot(fft_freq, np.abs(RC10_FFT[2,:]), label="FFT RC 3", color='r')
+#    ax[3].plot(fft_freq, np.abs(RC10_FFT[3,:]), label="FFT RC 4", color='r')
+    fig.suptitle('Magnitude')
+#    plt.xlim(-10,10)
+#    plt.ylim(-20,20)
+#    plt.legend(loc=1)
+#    plt.show()
+#    ##################################
+#    pdb.set_trace();
+
+    # Calculate valid RCs
+    tol = 0.05
+    valid = np.zeros((1,10)).flatten();
+    for i in range(10):
+        fft = np.fft.fft(RC_10[i,:])
+        fft_freq = np.fft.fftfreq(n=RC_10[i,:].size,d=1/fs)
+
+        # Plot FFT of first 4 RC signals
+        if i <= 7:
+            ax.flatten()[i].plot(fft_freq, np.abs(RC10_FFT[i,:]), label="FFT RC " + str(i), color='r')
+            ax.flatten()[i].set_xlim(-10,10)
+            ax.flatten()[i].set_ylim(-20,20)
+            ax.flatten()[i].legend(loc=1)
+    
+        peaks = find_peaks(np.abs(fft), height=2);
+        peaks =peaks[0];
+        idxInRange = np.where(np.logical_and(fft_freq[peaks]>=0.8, fft_freq[peaks]<=5));
+        idxInRange = idxInRange[0];
+        peaksInRange = peaks[idxInRange];
+
+        if len(peaks)>0:
+            max_peaks[i] = peaks[idxInRange[np.argmax(np.abs(fft[peaksInRange]))]];
+
+        if len(peaksInRange)>=2 and 2*fft_freq[peaksInRange[0]] <= fft_freq[peaksInRange[1]] + tol and 2*fft_freq[peaksInRange[0]] >= fft_freq[peaksInRange[1]] - tol:
+            valid[i] = 1;
+
+    plt.show()
+
+    if int(np.sum(valid)) > 0:
+        validRC = RC_10[valid.astype(bool),:];
+    else:
+        validRC = RC_10;
+
+    # Reconstructed Signal
+    y = np.sum(validRC,0);
+
+    # Plot RC Signal
+    plt.plot(y);
+    plt.title('Reconstructed G-sig after SSA')
+    plt.show()
+
+    # Apply Overlap Adding (Double check this later)
+    winSz = 32;
+    sigSz = len(y);
+    end_sig = False
+    i = 0
+    y_overlap = np.zeros(y.shape);
+    hanning = np.hanning(winSz)
+
+    # Plot Hanning Window
+    plt.plot(hanning);
+    plt.show()
+    #############################
+
+    while end_sig == False: 
+        beginIdx = int(i*(winSz/2));
+        endIdx = int(i*(winSz/2)+winSz);
+        y_overlap[beginIdx:endIdx] = y[beginIdx:endIdx]*hanning + y_overlap[beginIdx:endIdx];
+        i = i + 1;
+        if i*(winSz/2)+winSz > sigSz:
+            end_sig = True
+
+    endSz = int(winSz - (i*(winSz/2)+winSz - sigSz));
+    y_overlap[int(i*(winSz/2)):] = y_overlap[int(i*(winSz/2)):] + hanning[:endSz]*y[int(i*(winSz/2)):];
+
+    # Plot signal after overlap adding
+    plt.plot(y_overlap);
+    plt.title('Signal after overlap adding')
+    plt.show()
     
 
-    # SSA decomposition and RC selection
-    #SSA(sig);
-    #H = hankel(G);           # Hankel matrix
-    #[U, S, V] = svd(H);      # Singular value decomposition
-    #X = np.zeros(H.shape);
-    ##for i in range(10):      # Generate resultant matrix
-    ##    X = X + S[i,i]*U[:,i]@V[:,i].T
-    #X_elem = np.array( [S[i] * np.outer(U[:,i], V[:,i]) for i in range(0,10)] )
+    # Masking (NOTE: assumes videos are shorter than 10 seconds)
+    y_fft = np.fft.fft(y_overlap);
+    y_fft_freq = np.fft.fftfreq(n=RC_10[i,:].size,d=1/fs);
+    peaks = find_peaks(np.abs(y_fft), height=2);
+    peaks =peaks[0];
+    idxInRange = np.where(np.logical_and(y_fft_freq[peaks]>=0.8, y_fft_freq[peaks]<=5));
+    idxInRange = idxInRange[0];
+    peaksInRange = peaks[idxInRange];
+    maxIdx = peaks[idxInRange[np.argmax(np.abs(y_fft[peaksInRange]))]]; # Max freq of main sig
+    RCInclude = np.zeros((1,10)).astype(np.bool).flatten();
+    for i in range(10):
+        if y_fft_freq[maxIdx]-0.05 <= fft_freq[int(max_peaks[i])] and fft_freq[int(max_peaks[i])] <= y_fft_freq[maxIdx] + 0.05:
+            RCInclude[i] = True;
+    g_sig = sum(RC_10[RCInclude,:], 0);
+
+    plt.plot(g_sig);
+    plt.title('Final G-channel rPPG signal')
+    plt.show()
+        
+    # Go back and debug this section and function in general
+
+    #plt.subplot(211)
+    #plt.plot(fft_freq, np.abs(RC10_FFT[9,:]), label="Real part", color='r')
+    #plt.xlim(-10,10)
+    #plt.ylim(-20,20)
+    #plt.legend(loc=1)
+    #plt.title("FFT in Frequency Domain")
+    #plt.scatter(fft_freq[peaksInRange], np.abs(fft[peaksInRange]));
     #
-    #n = 10 # In case d is less than 12 for the toy series. Say, if we were to exclude the noise component...
-    #for i in range(n):
-    #    plt.subplot(4,4,i+1)
-    #    title = "$\mathbf{X}_{" + str(i) + "}$"
-    #    plot_2d(X_elem[i], title)
-    #plt.tight_layout()
-    #
-    #fig = plt.subplot()
-    #for i in range(n):
-    #    F_i = X_to_TS(X_elem[i])
-    #    np.linspace(1,len(G), len(G));
-    #    pdb.set_trace()
-    #    fig.axes.plot(t, F_i, lw=2)
-    #
-    #fig.axes.plot(t, F, alpha=1, lw=1)
-    #fig.set_xlabel("$t$")
-    #fig.set_ylabel(r"$\tilde{F}_i(t)$")
-    #legend = [r"$\tilde{F}_{%s}$" %i for i in range(n)] + ["$F$"]
-    #fig.set_title("The First 12 Components of the Toy Time Series")
-    #fig.legend(legend, loc=(1.05,0.1));
-    #
-    # Implements green signal paper from DeepFake
-    #pdb.set_trace()
+    #plt.subplot(212)
+    #plt.plot(fft_freq, fft.imag, label="Imaginary part", color='r')
+    #plt.legend(loc=1)
+    #plt.xlim(-10,10)
+    #plt.ylim(-10,10)
+    
+    plt.show()
 
     return g_sig
-
-    
     
 print("Importing Video")
 
-#vidpath="/home/zlazri/Documents/ENEE/Research/FakeCatcher/FakeCatcher/DeepfakeTIMIT/fram1-original.mov"
+vidpath="/home/zlazri/Documents/ENEE/Research/FakeCatcher/FakeCatcher/DeepfakeTIMIT/fram1-original.mov"
 
-vidpath = '/home/zlazri/Documents/ENEE/Research/FakeCatcher/FakeCatcher/DeepfakeTIMIT/lower_quality/fadg0/sa1-video-fram1.avi'
+#vidpath = '/home/zlazri/Documents/ENEE/Research/FakeCatcher/FakeCatcher/DeepfakeTIMIT/lower_quality/fadg0/sa1-video-fram1.avi'
+
+print("Tracking tracking SURF points using KLT algorithm")
+[featMatches, init_ROIs] = getSURFThroughoutVid(vidpath);
+
+print("Tracking ROI and calculating cheek signals")
+sig_l, sig_r = cheekSigs2(vidpath, init_ROIs, featMatches);
 
 print("Tracking DLIB Landmarks using KLT algorithm")
 [featMatches, ROI] = getAndTrackDlibFeatures(vidpath);
@@ -585,25 +735,30 @@ print("Tracking DLIB Landmarks using KLT algorithm")
 print("Tracking ROI and calculating mid-region signal")
 sig_m = cheekSigs(vidpath, ROI, featMatches);
 
-print("Getting PPG signal")
-C_g = greenSig(vidpath, sig_m);
+print("Calculating mid-, left-, and right- region green PPG signals")
+G_m = greenSig(vidpath, sig_m);
+G_l = greenSig(vidpath, sig_l);
+G_r = greenSig(vidpath, sig_r);
 
-print("Calculating mid-region chrominance PPG signals")
+print("Calculating mid-, left-, right region chrominance PPG signals")
 C_m = CHROM(sig_m, 48).flatten();
-
-pdb.set_trace()
-
-
-print("Tracking tracking SURF points using KLT algorithm")
-[featMatches, init_ROIs] =getSURFThroughoutVid(vidpath);
-
-print("Tracking ROI and calculating cheek signals")
-sig_l, sig_r = cheekSigs2(vidpath, init_ROIs, featMatches);
-
-print("Calculating cheek chrominance PPG signals")
 C_l = CHROM(sig_l, 48).flatten();
 C_r = CHROM(sig_r, 48).flatten();
-pdb.set_trace();
+
+fig, ax = plt.subplots(3,2);
+ax[0,0].plot(G_m)
+ax[0,0].set_title("G_m")
+ax[0,1].plot(C_m)
+ax[0,1].set_title("C_m")
+ax[1,0].plot(G_l)
+ax[1,0].set_title("G_l")
+ax[1,1].plot(C_l)
+ax[1,1].set_title("C_l")
+ax[2,0].plot(G_r)
+ax[2,0].set_title("G_r")
+ax[2,1].plot(C_r)
+ax[2,1].set_title("C_r")
+plt.show()
 
 
 # TODO / DONE
@@ -635,7 +790,8 @@ pdb.set_trace();
 # 5) Simplify code and remove redundancies
 
 
-
+# Considerations:
+# 1) For ROI tracking, consider implementing tracking of ROI using interpolation for non-integer valued pixel locations rather than only transforming the corners of the rectangular ROI.
 
 
 
