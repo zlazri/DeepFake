@@ -60,26 +60,17 @@ def getAndTrackDlibFeatures(vidpath):
     # Get video parameters
     cap = cv2.VideoCapture(vidpath);
     N_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT));
-    ret, old_frame = cap.read()
-    old_gray = cv2.cvtColor(old_frame, cv2.COLOR_BGR2GRAY)
-    m,n,k = old_frame.shape
-    color = np.random.randint(0,255,(300,3)) 
+    m = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    n  = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
 
     # Initialize DLIB face detector
     detector = dlib.get_frontal_face_detector()
     predictor = dlib.shape_predictor("/home/zlazri/Documents/ENEE/Research/FakeCatcher/FakeCatcher/shape_predictor_68_face_landmarks.dat");
 
     # Define cheek and mid region signals
-    sig_l = np.zeros((k,N_frames));
-    sig_r = np.zeros((k,N_frames));
-    sig_m = np.zeros((k,N_frames));
-
-    # Get video parameters
-    cv2.destroyAllWindows()
-    cap.release()
-    cap = cv2.VideoCapture(vidpath);
-    N_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT));
-    m,n,k = old_frame.shape
+    sig_l = np.zeros((3,N_frames));
+    sig_r = np.zeros((3,N_frames));
+    sig_m = np.zeros((3,N_frames));
 
     for fnum in range(N_frames):
 
@@ -105,40 +96,9 @@ def getAndTrackDlibFeatures(vidpath):
         # Plot DLIB facial landmarks
         for number, (x, y) in enumerate(shape):
             text = str(number);
-            text_origin = (x - 5, y - 5)
-    
-            if number == 33:
-                y2 = y
-            if number == 40:
-                x1 = x;
-                y_up1 = y;
-            if number == 47:
-                x2 = x;
-                y_up2 = y;
-    
+            text_origin = (x - 5, y - 5)    
             cv2.circle(old_frame, (x, y), 1, (0, 0, 255), -1)
             cv2.putText(old_frame, text, text_origin, cv2.FONT_HERSHEY_DUPLEX, 0.25, (255, 0, 0));
-        
-        y1 = np.max([y_up1, y_up2]);
-    
-        # Define ROI of mid region
-        x = x1
-        y = y1;
-        w = x2-x1;
-        h = y2-y1;
-    
-        pt1 = (int(x),int(y));
-        pt2 = (x+w,int(y));
-        pt3 = (int(x+w),int(y+h));
-        pt4 = (int(x),int(y+h));
-    
-        ROI = [x, y, w, h];
-    
-        cv2.rectangle(old_frame, (x, y), (x + w, y + h), (0, 0, 255), 2);
-        #cv2.imshow('frame',old_frame[:,:,::-1])
-        #k = cv2.waitKey(30) & 0xff
-        #if k == 27:
-        #    break
     
         # Define ROI of left cheek
 
@@ -231,13 +191,81 @@ def getAndTrackDlibFeatures(vidpath):
         y4 = x4*line4[0] + line4[1];
         pt4_r = (int(x4),int(y4));
 
+        # Define ROI of mid region
+
+        # First get all of the landmarks that will be used to generate the bounding lines of the ROI
+        line1End1 = shape[39,:];
+        line1End2 = shape[7,:];
+        line2End1 = shape[39,:];
+        line2End2 = shape[42,:];
+        line3End1 = shape[42,:];
+        line3End2 = shape[9,:];
+        line4End1 = shape[13,:];
+        line4End2 = shape[3,:];
+
+        m = (line3End1[1] - line3End2[1])/(line3End1[0]-line3End2[0]) #slope
+        b = line3End1[1]-m*line3End1[0];
+        line3 = (m,b);
+
+        # Find the bounding lines
+        m = (line1End1[1] - line1End2[1])/(line1End1[0]-line1End2[0]) #slope
+        b = line1End1[1]-m*line1End1[0];
+        line1 = (m,b);
+        m = (line2End1[1] - line2End2[1])/(line2End1[0]-line2End2[0]) #slope
+        b = line2End1[1]-m*line2End1[0];
+        line2 = (m,b);
+        m = (line3End1[1] - line3End2[1])/(line3End1[0]-line3End2[0]) #slope
+        b = line3End1[1]-m*line3End1[0];
+        line3 = (m,b);
+        m = (line4End1[1] - line4End2[1])/(line4End1[0]-line4End2[0]) #slope
+        b = line4End1[1]-m*line4End1[0];
+        line4 = (m,b);
+
+        # Deals with issue if one side of convex polygon is vertical line
+        if line1[0] == np.inf or line1[0] == -np.inf or line1[1] == np.inf or line1[1] == -np.inf or line3[0] == np.inf or line3[0] == -np.inf or line3[1] == np.inf or line3[1] == -np.inf:
+
+            (x1,y1) = shape[39];
+            (x2,y2) = shape[42];
+            (x3,y3) = (x2, line4[0]*x2+line4[1]);
+            (x4,y4) = (x1, line4[0]*x1+line4[1]);
+            pt1_m = (int(x1),int(y1))
+            pt2_m = (int(x2),int(y2))
+            pt3_m = (int(x3),int(y3))
+            pt4_m = (int(x4),int(y4))
+
+        else:
+
+            # Get corners of convex polygon that defines ROI
+            x1 = (line2[1]-line1[1])/(line1[0]-line2[0]);
+            y1 = x1*line1[0] + line1[1];
+    
+            pt1_m = (int(x1),int(y1));
+    
+            x2 = (line3[1]-line2[1])/(line2[0]-line3[0]);
+            y2 = x2*line2[0] + line2[1];
+
+            pt2_m = (int(x2),int(y2));
+    
+            x3 = (line4[1]-line3[1])/(line3[0]-line4[0]);
+            y3 = x3*line3[0] + line3[1];
+            pt3_m = (int(x3),int(y3));
+        
+            x4 = (line1[1]-line4[1])/(line4[0]-line1[0]);
+            y4 = x4*line4[0] + line4[1];
+            pt4_m = (int(x4),int(y4));
+        
+        # Generate a mask for the ROI
         m,n,k = old_frame.shape
-        mask_l = np.zeros((m,n));
-        mask_l = cv2.fillConvexPoly(mask_l, np.array([pt1, pt2, pt3, pt4]), color=(1,1,1));
+        mask_m = np.zeros((m,n));
+        mask_m = cv2.fillConvexPoly(mask_m, np.array([pt1_m, pt2_m, pt3_m, pt4_m]), color=(1,1,1));
+
+        m,n,k = old_frame.shape
+        mask_m = np.zeros((m,n));
+        mask_m = cv2.fillConvexPoly(mask_m, np.array([pt1_m, pt2_m, pt3_m, pt4_m]), color=(1,1,1));
         mask_r = np.zeros((m,n));
         mask_r = cv2.fillConvexPoly(mask_r, np.array([pt1_r, pt2_r, pt3_r, pt4_r]), color=(1,1,1));
-        mask_m = np.zeros((m,n));
-        mask_m = cv2.fillConvexPoly(mask_m, np.array([pt1_l, pt2_l, pt3_l, pt4_l]), color=(1,1,1));
+        mask_l = np.zeros((m,n));
+        mask_l = cv2.fillConvexPoly(mask_l, np.array([pt1_l, pt2_l, pt3_l, pt4_l]), color=(1,1,1));
 
         Imask_l = -1*(mask_l-1)
         Imask_r = -1*(mask_r-1)
@@ -277,145 +305,7 @@ def getAndTrackDlibFeatures(vidpath):
         sig_m[2,fnum] = ROI[ROI>0].mean() #b
 
     cv2.destroyAllWindows()
-    cap.release()
-    pdb.set_trace()
-    # Generate a mask for the ROI
-    m,n,k = old_frame.shape
-    mask_r = np.zeros((m,n));
-    mask_r = cv2.fillConvexPoly(mask_r, np.array([pt1_r, pt2_r, pt3_r, pt4_r]), color=(1,1,1));
-    
-    # Track face landmarks
-
-    # Set LK tracking Parameters
-    lk_params = dict( winSize  = (15,15),
-                  maxLevel = 2,
-                  criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
-
-    # Initial keypoints/formatting
-    pts = np.array([pt1, pt2, pt3, pt4, pt1_l, pt2_l, pt3_l, pt4_l, pt1_r, pt2_r, pt3_r, pt4_r]) 
-    p0 = np.array(pts, np.float32);
-    p0 = p0.reshape(-1,1,2);
-
-    # define cheek and mid region signals
-    sig_l = np.zeros((k,n));
-    sig_r = np.zeros((k,n));
-    sig_m = np.zeros((k,n));
-    
-    # calculate signal on first frame
-    (pt1, pt2, pt3, pt4, pt1_l, pt2_l, pt3_l, pt4_l, pt1_r, pt2_r, pt3_r, pt4_r) = pts;
-    mask_l = np.zeros((m,n));
-    mask_l = cv2.fillConvexPoly(mask_l, np.array([pt1, pt2, pt3, pt4]), color=(1,1,1));
-    mask_r = np.zeros((m,n));
-    mask_r = cv2.fillConvexPoly(mask_r, np.array([pt1_r, pt2_r, pt3_r, pt4_r]), color=(1,1,1));
-    mask_m = np.zeros((m,n));
-    mask_m = cv2.fillConvexPoly(mask_m, np.array([pt1_l, pt2_l, pt3_l, pt4_l]), color=(1,1,1));
-    
-    # Left cheek
-    ROI = (mask_l*old_frame[:,:,2])
-    sig_l[0,0] = ROI[ROI>0].mean() #r
-    ROI = mask_l*old_frame[:,:,1]
-    sig_l[1,0] = ROI[ROI>0].mean() #g
-    ROI = mask_l*old_frame[:,:,0]
-    sig_l[2,0] = ROI[ROI>0].mean() #b
-
-    # Right cheek
-    ROI = (mask_r*old_frame[:,:,2])
-    sig_r[0,0] = ROI[ROI>0].mean() #r
-    ROI = mask_r*old_frame[:,:,1]
-    sig_r[1,0] = ROI[ROI>0].mean() #g
-    ROI = mask_r*old_frame[:,:,0]
-    sig_r[2,0] = ROI[ROI>0].mean() #b
-
-    #Middle Region
-    ROI = (mask_m*old_frame[:,:,2])
-    sig_m[0,0] = ROI[ROI>0].mean() #r
-    ROI = mask_m*old_frame[:,:,1]
-    sig_m[1,0] = ROI[ROI>0].mean() #g
-    ROI = mask_m*old_frame[:,:,0]
-    sig_m[2,0] = ROI[ROI>0].mean() #b
-    
-
-    # Initialize empty lists for tracked keypoints
-    mask = np.zeros_like(old_frame)
-    k0 = [];
-    k1 = [];
-
-    # Perform Tracking
-    for i in range(N_frames-1):
-        ret,frame = cap.read()
-        frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-
-        # calculate optical flow
-        #pdb.set_trace()
-        pts, st, err = cv2.calcOpticalFlowPyrLK(old_gray, frame_gray, p0, None, **lk_params)
-        #pdb.set_trace()
-        
-        pts = pts.astype(int)
-
-        # calculate signal on first frame
-        (pt1, pt2, pt3, pt4, pt1_l, pt2_l, pt3_l, pt4_l, pt1_r, pt2_r, pt3_r, pt4_r) = pts;
-        mask_l = np.zeros((m,n));
-        mask_l = cv2.fillConvexPoly(mask_l, np.array([pt1, pt2, pt3, pt4]), color=(1,1,1));
-        mask_r = np.zeros((m,n));
-        mask_r = cv2.fillConvexPoly(mask_r, np.array([pt1_r, pt2_r, pt3_r, pt4_r]), color=(1,1,1));
-        mask_m = np.zeros((m,n));
-        mask_m = cv2.fillConvexPoly(mask_m, np.array([pt1_l, pt2_l, pt3_l, pt4_l]), color=(1,1,1));
-    
-        # Left cheek
-        ROI = (mask_l*frame[:,:,2])
-        sig_l[0,i+1] = ROI[ROI>0].mean() #r
-        ROI = mask_l*frame[:,:,1]
-        sig_l[1,i+1] = ROI[ROI>0].mean() #g
-        ROI = mask_l*frame[:,:,0]
-        sig_l[2,i+1] = ROI[ROI>0].mean() #b
-
-        # Right cheek
-        ROI = (mask_r*frame[:,:,2])
-        sig_r[0,i+1] = ROI[ROI>0].mean() #r
-        ROI = mask_r*frame[:,:,1]
-        sig_r[1,i+1] = ROI[ROI>0].mean() #g
-        ROI = mask_r*frame[:,:,0]
-        sig_r[2,i+1] = ROI[ROI>0].mean() #b
-
-        #Middle Region
-        ROI = (mask_m*frame[:,:,2])
-        sig_m[0,i+1] = ROI[ROI>0].mean() #r
-        ROI = mask_m*frame[:,:,1]
-        sig_m[1,i+1] = ROI[ROI>0].mean() #g
-        ROI = mask_m*frame[:,:,0]
-        sig_m[2,i+1] = ROI[ROI>0].mean() #b
-    
-        # Select good points
-        #good_new = pts[st==1]
-        #good_old = p0[st==1]
-
-        # draw the tracks
-        for i,(new,old) in enumerate(zip(pts.squeeze(),p0.squeeze())):
-            a,b = new.ravel()
-            c,d = old.ravel()
-            #pdb.set_trace()
-            mask = cv2.line(mask, (a,b),(c,d), color[i].tolist(), 2)
-            frame = cv2.circle(frame,(a,b),5,color[i].tolist(),-1)
-        img = cv2.add(frame,mask)
-
-        cv2.imshow('frame',img)
-        k = cv2.waitKey(30) & 0xff
-        if k == 27:
-            break
-        
-        # Now update the previous frame and previous points
-        old_gray = frame_gray.copy()
-        p0 = np.array(pts, np.float32);
-        #p0 = good_new.reshape(-1,1,2)
-        #pdb.set_trace()
-
-    cv2.destroyAllWindows()
-    cap.release()
-
-    pdb.set_trace()
-
-    # Save matched keypoints
-    featMatches = [k0, k1];       
+    cap.release()     
         
     return sig_l, sig_r, sig_m
 
@@ -605,11 +495,8 @@ vidpath="/home/zlazri/Documents/ENEE/Research/FakeCatcher/FakeCatcher/DeepfakeTI
 
 #vidpath = '/home/zlazri/Documents/ENEE/Research/FakeCatcher/FakeCatcher/DeepfakeTIMIT/lower_quality/fadg0/sa1-video-fram1.avi'
 
-print("Tracking DLIB Landmarks using KLT algorithm")
-[featMatches, ROI] = getAndTrackDlibFeatures(vidpath);
-
-print("Tracking ROI and calculating mid-region signal")
-sig_m = cheekSigs(vidpath, ROI, featMatches);
+print("Obtaining 3 ROIs")
+[sig_l, sig_r, sig_m] = getAndTrackDlibFeatures(vidpath);
 
 print("Calculating mid-, left-, and right- region green PPG signals")
 G_m = greenSig(vidpath, sig_m);
@@ -621,6 +508,7 @@ C_m = CHROM(sig_m, 48).flatten();
 C_l = CHROM(sig_l, 48).flatten();
 C_r = CHROM(sig_r, 48).flatten();
 
+pdb.set_trace()
 fig, ax = plt.subplots(3,2);
 ax[0,0].plot(G_m)
 ax[0,0].set_title("G_m")
@@ -635,6 +523,7 @@ ax[2,0].set_title("G_r")
 ax[2,1].plot(C_r)
 ax[2,1].set_title("C_r")
 plt.show()
+
 
 
 # TODO / DONE
