@@ -320,9 +320,9 @@ def greenSig(vidpath, RGB):
     color = np.random.randint(0,255,(300,3))
 
     # Plot initial G signal
-    plt.plot(RGB[2,:])
-    plt.title('Initial G sig.')
-    plt.show()
+    #plt.plot(RGB[2,:])
+    #plt.title('Initial G sig.')
+    #plt.show()
     ################################
 
     # Bandpass filter the signal between 0.8 and 5 Hz
@@ -337,9 +337,9 @@ def greenSig(vidpath, RGB):
     G = filtfilt(b,a,G);
 
     # Plot bandpass filtered G signal
-    plt.plot(G)
-    plt.title('Bandpass filtered G sig. [0.8, 5] Hz')
-    plt.show()
+    #plt.plot(G)
+    #plt.title('Bandpass filtered G sig. [0.8, 5] Hz')
+    #plt.show()
     ###################################
 
     # SSA decomposition and RC selection
@@ -349,13 +349,13 @@ def greenSig(vidpath, RGB):
     RC_10 = G_RCs[0:10,:];
 
     # Plot first 4 RC signals
-    fig, ax = plt.subplots(4,1);
-    fig.suptitle('Reconstruction Components')
-    ax[0].plot(RC_10[0,:])
-    ax[1].plot(RC_10[1,:])
-    ax[2].plot(RC_10[2,:])
-    ax[3].plot(RC_10[3,:])
-    plt.show()
+    #fig, ax = plt.subplots(4,1);
+    #fig.suptitle('Reconstruction Components')
+    #ax[0].plot(RC_10[0,:])
+    #ax[1].plot(RC_10[1,:])
+    #ax[2].plot(RC_10[2,:])
+    #ax[3].plot(RC_10[3,:])
+    #plt.show()
     #######################     
 
     # Calculate FFT of 10 candiates and max peaks
@@ -365,19 +365,8 @@ def greenSig(vidpath, RGB):
         RC10_FFT[i,:] = np.fft.fft(RC_10[i,:]);
 
     # Plot FFT of first 4 RC signals
-    fig, ax = plt.subplots(4,2);
-#    fig.suptitle('FFT of Reconstruction Components')
-#    ax[0].plot(fft_freq, np.abs(RC10_FFT[0,:]), label="FFT RC 1", color='r')
-#    ax[1].plot(fft_freq, np.abs(RC10_FFT[1,:]), label="FFT RC 2", color='r')
-#    ax[2].plot(fft_freq, np.abs(RC10_FFT[2,:]), label="FFT RC 3", color='r')
-#    ax[3].plot(fft_freq, np.abs(RC10_FFT[3,:]), label="FFT RC 4", color='r')
-    fig.suptitle('Magnitude')
-#    plt.xlim(-10,10)
-#    plt.ylim(-20,20)
-#    plt.legend(loc=1)
-#    plt.show()
-#    ##################################
-#    pdb.set_trace();
+    #fig, ax = plt.subplots(4,2);
+    #fig.suptitle('Magnitude')
 
     # Calculate valid RCs
     tol = 0.05
@@ -387,11 +376,11 @@ def greenSig(vidpath, RGB):
         fft_freq = np.fft.fftfreq(n=RC_10[i,:].size,d=1/fs)
 
         # Plot FFT of first 4 RC signals
-        if i <= 7:
-            ax.flatten()[i].plot(fft_freq, np.abs(RC10_FFT[i,:]), label="FFT RC " + str(i), color='r')
-            ax.flatten()[i].set_xlim(-10,10)
-            ax.flatten()[i].set_ylim(-20,20)
-            ax.flatten()[i].legend(loc=1)
+        #if i <= 7:
+            #ax.flatten()[i].plot(fft_freq, np.abs(RC10_FFT[i,:]), label="FFT RC " + str(i), color='r')
+            #ax.flatten()[i].set_xlim(-10,10)
+            #ax.flatten()[i].set_ylim(-20,20)
+            #ax.flatten()[i].legend(loc=1)
     
         peaks = find_peaks(np.abs(fft), height=2);
         peaks =peaks[0];
@@ -405,7 +394,7 @@ def greenSig(vidpath, RGB):
         if len(peaksInRange)>=2 and 2*fft_freq[peaksInRange[0]] <= fft_freq[peaksInRange[1]] + tol and 2*fft_freq[peaksInRange[0]] >= fft_freq[peaksInRange[1]] - tol:
             valid[i] = 1;
 
-    plt.show()
+    #plt.show()
 
     if int(np.sum(valid)) > 0:
         validRC = RC_10[valid.astype(bool),:];
@@ -413,12 +402,12 @@ def greenSig(vidpath, RGB):
         validRC = RC_10;
 
     # Reconstructed Signal
-    y = np.sum(validRC,0);
+    y = np.sum(RC_10,0);############################
 
     # Plot RC Signal
-    plt.plot(y);
-    plt.title('Reconstructed G-sig after SSA')
-    plt.show()
+    #plt.plot(y);
+    #plt.title('Reconstructed G-sig after SSA')
+    #plt.show()
 
     # Apply Overlap Adding (Double check this later)
     winSz = 32;
@@ -429,8 +418,8 @@ def greenSig(vidpath, RGB):
     hanning = np.hanning(winSz)
 
     # Plot Hanning Window
-    plt.plot(hanning);
-    plt.show()
+    #plt.plot(hanning);
+    #plt.show()
     #############################
 
     while end_sig == False: 
@@ -445,9 +434,9 @@ def greenSig(vidpath, RGB):
     y_overlap[int(i*(winSz/2)):] = y_overlap[int(i*(winSz/2)):] + hanning[:endSz]*y[int(i*(winSz/2)):];
 
     # Plot signal after overlap adding
-    plt.plot(y_overlap);
-    plt.title('Signal after overlap adding')
-    plt.show()
+    #plt.plot(y_overlap);
+    #plt.title('Signal after overlap adding')
+    #plt.show()
     
 
     # Masking (NOTE: assumes videos are shorter than 10 seconds)
@@ -465,9 +454,9 @@ def greenSig(vidpath, RGB):
             RCInclude[i] = True;
     g_sig = sum(RC_10[RCInclude,:], 0);
 
-    plt.plot(g_sig);
-    plt.title('Final G-channel rPPG signal')
-    plt.show()
+    #plt.plot(g_sig);
+    #plt.title('Final G-channel rPPG signal')
+    #plt.show()
         
     # Go back and debug this section and function in general
 
@@ -485,7 +474,7 @@ def greenSig(vidpath, RGB):
     #plt.xlim(-10,10)
     #plt.ylim(-10,10)
     
-    plt.show()
+    #plt.show()
 
     return g_sig
     
